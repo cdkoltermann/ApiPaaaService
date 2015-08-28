@@ -42,6 +42,8 @@ public interface IntegratedLibrarySystem {
      */
     void init(Properties properties);
 
+    Patron signup(Patron patron) throws ILSException;
+
     Patron newpatron(Patron patron) throws ILSException;
 
     Patron updatepatron(Patron patron) throws ILSException;

@@ -280,7 +280,7 @@ public class PaaaEndpoint extends HttpServlet {
         }
         else {
             // PAAA - function
-            if (service.equals("newpatron") || service.equals("updatepatron") || service.equals("blockpatron") || service.equals("unblockpatron") || service.equals("newfee")) {
+            if (service.equals("signup") || service.equals("newpatron") || service.equals("updatepatron") || service.equals("blockpatron") || service.equals("unblockpatron") || service.equals("newfee")) {
 
                 // get 'Accept' and 'Authorization' from Header;
                 Enumeration<String> headerNames = httpServletRequest.getHeaderNames();
@@ -423,7 +423,6 @@ public class PaaaEndpoint extends HttpServlet {
         String patronid = "";
         String service = "";
         String accept = "";
-        String access_token = "";
         String authorization = "";
 
         String path = httpServletRequest.getPathInfo();
@@ -700,18 +699,92 @@ public class PaaaEndpoint extends HttpServlet {
 
         ObjectMapper mapper = new ObjectMapper();
 
-        switch (service) {
+        if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
 
-            case "newpatron": {
+            try {
+                IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
+                // init ILS
+                integratedLibrarySystem.init(this.config);
 
-                if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
+                switch (service) {
 
-                    Patron patron = null;
+                    case "signup": {
 
-                    try {
-                        IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
-                        // init ILS
-                        integratedLibrarySystem.init(this.config);
+                        Patron patron = null;
+
+                        // read Patron
+                        StringBuffer jb = new StringBuffer();
+                        String line = null;
+                        try {
+                            BufferedReader reader = httpServletRequest.getReader();
+                            while ((line = reader.readLine()) != null)
+                                jb.append(line);
+                        } catch (Exception e) { /*report an error*/ }
+
+                        Patron patron2create = mapper.readValue(jb.toString(), Patron.class);
+                        patron2create.setAccount(patronid);
+
+                        patron = integratedLibrarySystem.signup(patron2create);
+
+                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
+
+                        if (patron != null) {
+
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, patron);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                            // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
+                            if (httpServletRequest.getParameter("redirect_uri") != null) {
+                                this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
+
+                                httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                            }
+                            else {
+                                httpServletResponse.setContentType("application/json");
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+                                httpServletResponse.getWriter().println(json);
+                            }
+                        }
+                        else {
+                            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
+                            httpServletResponse.setContentType("application/json");
+                            httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+                            // Error handling mit suppress_response_codes=true
+                            if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                            }
+                            // Error handling mit suppress_response_codes=false (=default)
+                            else {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            }
+
+                            // Json für Response body
+                            RequestError requestError = new RequestError();
+                            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
+                            requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
+                            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, requestError);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                            // send response
+                            httpServletResponse.getWriter().println(json);
+                        }
+
+                        break;
+                    }
+                    case "newpatron": {
+
+                        Patron patron = null;
 
                         // read Patron
                         StringBuffer jb = new StringBuffer();
@@ -728,138 +801,64 @@ public class PaaaEndpoint extends HttpServlet {
                         patron = integratedLibrarySystem.newpatron(patron2create);
 
                         this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
-                    }
-                    catch (ILSException e) {
 
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
+                        if (patron != null) {
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, patron);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
 
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
+                            // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
+                            if (httpServletRequest.getParameter("redirect_uri") != null) {
+                                this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
 
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+                                httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                            }
+                            else {
+                                httpServletResponse.setContentType("application/json");
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
 
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-
-                    if (patron != null) {
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, patron);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
-                        if (httpServletRequest.getParameter("redirect_uri") != null) {
-                            this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
-
-                            httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                                httpServletResponse.getWriter().println(json);
+                            }
                         }
                         else {
+                            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
                             httpServletResponse.setContentType("application/json");
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
                             httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
 
+                            // Error handling mit suppress_response_codes=true
+                            if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                            }
+                            // Error handling mit suppress_response_codes=false (=default)
+                            else {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            }
+
+                            // Json für Response body
+                            RequestError requestError = new RequestError();
+                            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
+                            requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
+                            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, requestError);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                            // send response
                             httpServletResponse.getWriter().println(json);
                         }
+
+                        break;
                     }
-                    else {
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+                    case "updatepatron": {
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
-
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-                }
-                else {
-
-                    this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
-
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                    httpServletResponse.setContentType("application/json");
-                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                    // Error handling mit suppress_response_codes=true
-                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    }
-                    // Error handling mit suppress_response_codes=false (=default)
-                    else {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    }
-
-                    // Json für Response body
-                    RequestError requestError = new RequestError();
-                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                    requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                    StringWriter json = new StringWriter();
-                    mapper.writeValue(json, requestError);
-                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                    // send response
-                    httpServletResponse.getWriter().println(json);
-                }
-
-                break;
-            }
-            case "updatepatron": {
-
-                if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
-
-                    Patron patron = null;
-
-                    try {
-                        IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
-                        // init ILS
-                        integratedLibrarySystem.init(this.config);
+                        Patron patron = null;
 
                         // read Patron
                         StringBuffer jb = new StringBuffer();
@@ -930,43 +929,58 @@ public class PaaaEndpoint extends HttpServlet {
                             // send response
                             httpServletResponse.getWriter().println(json);
                         }
+
+                        break;
                     }
-                    catch (ILSException e) {
+                    case "blockpatron": {
 
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
+                        Patron patron = null;
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+                        // read Patron
+                        StringBuffer jb = new StringBuffer();
+                        String line = null;
+                        try {
+                            BufferedReader reader = httpServletRequest.getReader();
+                            while ((line = reader.readLine()) != null)
+                                jb.append(line);
+                        } catch (Exception e) { /*report an error*/ }
 
-                        if (e.getMessage().equals("403")) {
+                        Patron patron2block = new Patron();
+                        patron2block.setAccount(patronid);
+                        Block block = mapper.readValue(jb.toString(), Block.class);
 
-                            // Error handling mit suppress_response_codes=true
-                            if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                            }
-                            // Error handling mit suppress_response_codes=false (=default)
-                            else {
-                                httpServletResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                            }
+                        patron = integratedLibrarySystem.blockpatron(patron2block, block);
 
-                            // Json für Response body
-                            RequestError requestError = new RequestError();
-                            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_FORBIDDEN)));
-                            requestError.setCode(HttpServletResponse.SC_FORBIDDEN);
-                            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_FORBIDDEN) + ".description"));
-                            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_FORBIDDEN) + ".uri"));
+                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
+
+                        if (patron != null) {
 
                             StringWriter json = new StringWriter();
-                            mapper.writeValue(json, requestError);
+                            mapper.writeValue(json, patron);
                             this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
 
-                            // send response
-                            httpServletResponse.getWriter().println(json);
+                            // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
+                            if (httpServletRequest.getParameter("redirect_uri") != null) {
+                                this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
+
+                                httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                            }
+                            else {
+                                httpServletResponse.setContentType("application/json");
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+                                httpServletResponse.getWriter().println(json);
+                            }
                         }
                         else {
+                            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
+                            httpServletResponse.setContentType("application/json");
+                            httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
                             // Error handling mit suppress_response_codes=true
                             if (httpServletRequest.getParameter("suppress_response_codes") != null) {
                                 httpServletResponse.setStatus(HttpServletResponse.SC_OK);
@@ -990,202 +1004,12 @@ public class PaaaEndpoint extends HttpServlet {
                             // send response
                             httpServletResponse.getWriter().println(json);
                         }
+
+                        break;
                     }
-                }
-                else {
+                    case "unblockpatron": {
 
-                    this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
-
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                    httpServletResponse.setContentType("application/json");
-                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                    // Error handling mit suppress_response_codes=true
-                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    }
-                    // Error handling mit suppress_response_codes=false (=default)
-                    else {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    }
-
-                    // Json für Response body
-                    RequestError requestError = new RequestError();
-                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                    requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                    StringWriter json = new StringWriter();
-                    mapper.writeValue(json, requestError);
-                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                    // send response
-                    httpServletResponse.getWriter().println(json);
-                }
-
-                break;
-            }
-            case "blockpatron": {
-
-                if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
-
-                    Patron patron = null;
-
-                    try {
-                        IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
-                        // init ILS
-                        integratedLibrarySystem.init(this.config);
-
-                        // read Patron
-                        StringBuffer jb = new StringBuffer();
-                        String line = null;
-                        try {
-                            BufferedReader reader = httpServletRequest.getReader();
-                            while ((line = reader.readLine()) != null)
-                                jb.append(line);
-                        } catch (Exception e) { /*report an error*/ }
-
-                        Patron patron2block = new Patron();
-                        patron2block.setAccount(patronid);
-                        Block block = mapper.readValue(jb.toString(), Block.class);
-
-                        patron = integratedLibrarySystem.blockpatron(patron2block, block);
-
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
-                    }
-                    catch (ILSException e) {
-
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
-
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
-
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-
-                    if (patron != null) {
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, patron);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
-                        if (httpServletRequest.getParameter("redirect_uri") != null) {
-                            this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
-
-                            httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
-                        }
-                        else {
-                            httpServletResponse.setContentType("application/json");
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                            httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                            httpServletResponse.getWriter().println(json);
-                        }
-                    }
-                    else {
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
-
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
-
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-                }
-                else {
-
-                    this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
-
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                    httpServletResponse.setContentType("application/json");
-                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                    // Error handling mit suppress_response_codes=true
-                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    }
-                    // Error handling mit suppress_response_codes=false (=default)
-                    else {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    }
-
-                    // Json für Response body
-                    RequestError requestError = new RequestError();
-                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                    requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                    StringWriter json = new StringWriter();
-                    mapper.writeValue(json, requestError);
-                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                    // send response
-                    httpServletResponse.getWriter().println(json);
-                }
-
-                break;
-            }
-            case "unblockpatron": {
-
-                if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
-
-                    Patron patron = null;
-
-                    try {
-                        IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
-                        // init ILS
-                        integratedLibrarySystem.init(this.config);
+                        Patron patron = null;
 
                         // read Patron
                         StringBuffer jb = new StringBuffer();
@@ -1203,137 +1027,63 @@ public class PaaaEndpoint extends HttpServlet {
                         patron = integratedLibrarySystem.unblockpatron(patron2unblock, block);
 
                         this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
-                    }
-                    catch (ILSException e) {
 
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
+                        if (patron != null) {
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, patron);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
 
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                            // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
+                            if (httpServletRequest.getParameter("redirect_uri") != null) {
+                                this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
+
+                                httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                            } else {
+                                httpServletResponse.setContentType("application/json");
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+                                httpServletResponse.getWriter().println(json);
+                            }
                         }
-                        // Error handling mit suppress_response_codes=false (=default)
                         else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
+                            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
 
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-
-                    if (patron != null) {
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, patron);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
-                        if (httpServletRequest.getParameter("redirect_uri") != null) {
-                            this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
-
-                            httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
-                        } else {
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
                             httpServletResponse.setContentType("application/json");
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
                             httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
 
+                            // Error handling mit suppress_response_codes=true
+                            if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                            }
+                            // Error handling mit suppress_response_codes=false (=default)
+                            else {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            }
+
+                            // Json für Response body
+                            RequestError requestError = new RequestError();
+                            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
+                            requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
+                            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, requestError);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                            // send response
                             httpServletResponse.getWriter().println(json);
                         }
+
+                        break;
                     }
-                    else {
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+                    case "deletepatron": {
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
-
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-                }
-                else {
-
-                    this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
-
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                    httpServletResponse.setContentType("application/json");
-                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                    // Error handling mit suppress_response_codes=true
-                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    }
-                    // Error handling mit suppress_response_codes=false (=default)
-                    else {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    }
-
-                    // Json für Response body
-                    RequestError requestError = new RequestError();
-                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                    requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                    StringWriter json = new StringWriter();
-                    mapper.writeValue(json, requestError);
-                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                    // send response
-                    httpServletResponse.getWriter().println(json);
-                }
-
-                break;
-            }
-            case "deletepatron": {
-
-                if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
-
-                    Patron patron = null;
-
-                    try {
-                        IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
-                        // init ILS
-                        integratedLibrarySystem.init(this.config);
+                        Patron patron = null;
 
                         Patron patron2delete = new Patron();
                         patron2delete.setAccount(patronid);
@@ -1341,139 +1091,65 @@ public class PaaaEndpoint extends HttpServlet {
                         patron = integratedLibrarySystem.deletepatron(patron2delete);
 
                         this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
-                    }
-                    catch (ILSException e) {
 
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
+                        if (patron != null) {
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, patron);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
 
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
+                            // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
+                            if (httpServletRequest.getParameter("redirect_uri") != null) {
+                                this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
 
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+                                httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                            }
+                            else {
+                                httpServletResponse.setContentType("application/json");
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
 
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-
-                    if (patron != null) {
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, patron);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // If request contains parameter 'redirect_uri', then redirect mit access_token and patronid
-                        if (httpServletRequest.getParameter("redirect_uri") != null) {
-                            this.logger.debug("[" + config.getProperty("service.name") + "] " + "REDIRECT? " + httpServletRequest.getParameter("redirect_uri"));
-
-                            httpServletResponse.sendRedirect(httpServletRequest.getParameter("redirect_uri") + "&patron=" + patronid + "&token=" + token);
+                                httpServletResponse.getWriter().println(json);
+                            }
                         }
                         else {
+                            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                            httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
                             httpServletResponse.setContentType("application/json");
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
                             httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
 
+                            // Error handling mit suppress_response_codes=true
+                            if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                            }
+                            // Error handling mit suppress_response_codes=false (=default)
+                            else {
+                                httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            }
+
+                            // Json für Response body
+                            RequestError requestError = new RequestError();
+                            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
+                            requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
+                            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+
+                            StringWriter json = new StringWriter();
+                            mapper.writeValue(json, requestError);
+                            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                            // send response
                             httpServletResponse.getWriter().println(json);
                         }
+
+                        break;
                     }
-                    else {
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS!");
+                    case "newfee": {
 
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
-
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
-                    }
-                }
-                else {
-
-                    this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
-
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                    httpServletResponse.setContentType("application/json");
-                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                    // Error handling mit suppress_response_codes=true
-                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    }
-                    // Error handling mit suppress_response_codes=false (=default)
-                    else {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    }
-
-                    // Json für Response body
-                    RequestError requestError = new RequestError();
-                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                    requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                    StringWriter json = new StringWriter();
-                    mapper.writeValue(json, requestError);
-                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                    // send response
-                    httpServletResponse.getWriter().println(json);
-                }
-
-                break;
-            }
-            case "newfee": {
-
-                if (Lookup.lookupAll(IntegratedLibrarySystem.class).size() > 0) {
-
-                    Patron patron = null;
-                    Fee resultFee = null;
-
-                    try {
-                        IntegratedLibrarySystem integratedLibrarySystem = Lookup.lookup(IntegratedLibrarySystem.class);
-                        // init ILS
-                        integratedLibrarySystem.init(this.config);
+                        Patron patron = null;
+                        Fee resultFee = null;
 
                         patron = new Patron();
                         patron.setAccount(patronid);
@@ -1549,85 +1225,82 @@ public class PaaaEndpoint extends HttpServlet {
                             // send response
                             httpServletResponse.getWriter().println(json);
                         }
+
+                        break;
                     }
-                    catch (ILSException e) {
-
-                        this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                        this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
-
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                        httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                        httpServletResponse.setContentType("application/json");
-                        httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                        // Error handling mit suppress_response_codes=true
-                        if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                            this.logger.debug("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_OK);
-                        }
-                        // Error handling mit suppress_response_codes=false (=default)
-                        else {
-                            httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                            this.logger.debug("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        }
-
-                        // Json für Response body
-                        RequestError requestError = new RequestError();
-                        requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                        requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                        requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                        requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                        StringWriter json = new StringWriter();
-                        mapper.writeValue(json, requestError);
-                        this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                        // send response
-                        httpServletResponse.getWriter().println(json);
+                    default: {
+                        // TODO: keine gültige Funktion
                     }
-
                 }
+            }
+            catch (ILSException e) {
+
+                this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
+                this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
+
+                httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
+                httpServletResponse.setContentType("application/json");
+                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+                // Error handling mit suppress_response_codes=true
+                if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                    httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                }
+                // Error handling mit suppress_response_codes=false (=default)
                 else {
-
-                    this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
-
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                    httpServletResponse.setContentType("application/json");
-                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                    // Error handling mit suppress_response_codes=true
-                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    }
-                    // Error handling mit suppress_response_codes=false (=default)
-                    else {
-                        httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    }
-
-                    // Json für Response body
-                    RequestError requestError = new RequestError();
-                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                    requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
-
-                    StringWriter json = new StringWriter();
-                    mapper.writeValue(json, requestError);
-                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                    // send response
-                    httpServletResponse.getWriter().println(json);
+                    httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
                 }
 
-                break;
+                // Json für Response body
+                RequestError requestError = new RequestError();
+                requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
+                requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
+                requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+
+                StringWriter json = new StringWriter();
+                mapper.writeValue(json, requestError);
+                this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                // send response
+                httpServletResponse.getWriter().println(json);
             }
-            default: {
-                // TODO: keine gültige Funktion
+        }
+        else {
+
+            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
+
+            httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+            httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
+            httpServletResponse.setContentType("application/json");
+            httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+            // Error handling mit suppress_response_codes=true
+            if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                httpServletResponse.setStatus(HttpServletResponse.SC_OK);
             }
+            // Error handling mit suppress_response_codes=false (=default)
+            else {
+                httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            }
+
+            // Json für Response body
+            RequestError requestError = new RequestError();
+            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
+            requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
+            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+
+            StringWriter json = new StringWriter();
+            mapper.writeValue(json, requestError);
+            this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+            // send response
+            httpServletResponse.getWriter().println(json);
+        }
 
         }
-    }
 
     private void sendRequestError(HttpServletResponse httpServletResponse, RequestError requestError) {
 
