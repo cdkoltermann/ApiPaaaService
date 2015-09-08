@@ -44,8 +44,10 @@ import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
 import java.io.*;
 import java.net.URLDecoder;
+import java.time.LocalDateTime;
 import java.util.Enumeration;
 import java.util.Properties;
+import java.util.UUID;
 
 /**
  * @author Hans-Georg Becker
@@ -58,8 +60,6 @@ public class PaaaEndpoint extends HttpServlet {
     private Properties config = new Properties();
     private Logger logger = Logger.getLogger(PaaaEndpoint.class.getName());
     private Properties apikeys;
-
-    private String format;
 
     /**
      * @throws java.io.IOException
@@ -212,6 +212,8 @@ public class PaaaEndpoint extends HttpServlet {
         String accept = "";
         String authorization = "";
 
+        String format = "json";
+
         String path = httpServletRequest.getPathInfo();
         String[] params = path.substring(1, path.length()).split("/");
 
@@ -224,12 +226,16 @@ public class PaaaEndpoint extends HttpServlet {
             service = params[1];
         }
 
+        if (patronid.equals("patronid")) {
+            patronid = "";
+        }
+
         this.logger.debug("[" + this.config.getProperty("service.name") + "] " + "Patron: " + patronid);
         this.logger.debug("[" + this.config.getProperty("service.name") + "] " + "Service: " + service);
 
         if (httpServletRequest.getParameter("format") != null && !httpServletRequest.getParameter("format").equals("")) {
 
-            this.format = httpServletRequest.getParameter("format");
+            format = httpServletRequest.getParameter("format");
         }
         else {
 
@@ -242,23 +248,23 @@ public class PaaaEndpoint extends HttpServlet {
                     this.logger.debug("headerNameKey = " + httpServletRequest.getHeader( headerNameKey ));
 
                     if (httpServletRequest.getHeader( headerNameKey ).contains("text/html")) {
-                        this.format = "html";
+                        format = "html";
                     }
                     else if (httpServletRequest.getHeader( headerNameKey ).contains("application/xml")) {
-                        this.format = "xml";
+                        format = "xml";
                     }
                     else if (httpServletRequest.getHeader( headerNameKey ).contains("application/json")) {
-                        this.format = "json";
+                        format = "json";
                     }
                 }
             }
         }
 
-        this.logger.info("format = " + this.format);
+        this.logger.info("format = " + format);
 
-        if (!this.format.equals("json") && !this.format.equals("xml")) {
+        if (!format.equals("json") && !format.equals("xml")) {
 
-            this.logger.error("[" + this.config.getProperty("service.name") + "] " + HttpServletResponse.SC_BAD_REQUEST + ": " + this.format + " not implemented!");
+            this.logger.error("[" + this.config.getProperty("service.name") + "] " + HttpServletResponse.SC_BAD_REQUEST + ": " + format + " not implemented!");
 
             // Error handling mit suppress_response_codes=true
             if (httpServletRequest.getParameter("suppress_response_codes") != null) {
@@ -276,7 +282,7 @@ public class PaaaEndpoint extends HttpServlet {
             requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_BAD_REQUEST) + ".description"));
             requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_BAD_REQUEST) + ".uri"));
 
-            this.sendRequestError(httpServletResponse, requestError);
+            this.sendRequestError(httpServletResponse, requestError, format);
         }
         else {
             // PAAA - function
@@ -371,12 +377,12 @@ public class PaaaEndpoint extends HttpServlet {
                 if (isAuthorized) {
 
                     // execute query
-                    this.provideService(httpServletRequest, httpServletResponse, patronid, authorization, service);
+                    this.provideService(httpServletRequest, httpServletResponse, format, patronid, authorization, service);
                 }
                 else {
 
                     // Authorization
-                    this.authorize(httpServletRequest, httpServletResponse);
+                    this.authorize(httpServletRequest, httpServletResponse, format);
                 }
             }
             else {
@@ -425,6 +431,8 @@ public class PaaaEndpoint extends HttpServlet {
         String accept = "";
         String authorization = "";
 
+        String format = "json";
+
         String path = httpServletRequest.getPathInfo();
         String[] params = path.substring(1, path.length()).split("/");
 
@@ -441,7 +449,7 @@ public class PaaaEndpoint extends HttpServlet {
 
         if (httpServletRequest.getParameter("format") != null && !httpServletRequest.getParameter("format").equals("")) {
 
-            this.format = httpServletRequest.getParameter("format");
+            format = httpServletRequest.getParameter("format");
         }
         else {
 
@@ -454,23 +462,23 @@ public class PaaaEndpoint extends HttpServlet {
                     this.logger.debug("headerNameKey = " + httpServletRequest.getHeader( headerNameKey ));
 
                     if (httpServletRequest.getHeader( headerNameKey ).contains("text/html")) {
-                        this.format = "html";
+                        format = "html";
                     }
                     else if (httpServletRequest.getHeader( headerNameKey ).contains("application/xml")) {
-                        this.format = "xml";
+                        format = "xml";
                     }
                     else if (httpServletRequest.getHeader( headerNameKey ).contains("application/json")) {
-                        this.format = "json";
+                        format = "json";
                     }
                 }
             }
         }
 
-        this.logger.info("format = " + this.format);
+        this.logger.info("format = " + format);
 
-        if (!this.format.equals("json") && !this.format.equals("xml")) {
+        if (!format.equals("json") && !format.equals("xml")) {
 
-            this.logger.error("[" + this.config.getProperty("service.name") + "] " + HttpServletResponse.SC_BAD_REQUEST + ": " + this.format + " not implemented!");
+            this.logger.error("[" + this.config.getProperty("service.name") + "] " + HttpServletResponse.SC_BAD_REQUEST + ": " + format + " not implemented!");
 
             // Error handling mit suppress_response_codes=true
             if (httpServletRequest.getParameter("suppress_response_codes") != null) {
@@ -488,7 +496,7 @@ public class PaaaEndpoint extends HttpServlet {
             requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_BAD_REQUEST) + ".description"));
             requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_BAD_REQUEST) + ".uri"));
 
-            this.sendRequestError(httpServletResponse, requestError);
+            this.sendRequestError(httpServletResponse, requestError, format);
         }
         else {
             // PAAA - function
@@ -583,12 +591,12 @@ public class PaaaEndpoint extends HttpServlet {
                 if (isAuthorized) {
 
                     // execute query
-                    this.provideService(httpServletRequest, httpServletResponse, patronid, authorization, service);
+                    this.provideService(httpServletRequest, httpServletResponse, format, patronid, authorization, service);
                 }
                 else {
 
                     // Authorization
-                    this.authorize(httpServletRequest, httpServletResponse);
+                    this.authorize(httpServletRequest, httpServletResponse, format);
                 }
             }
             else {
@@ -642,7 +650,7 @@ public class PaaaEndpoint extends HttpServlet {
      * @param httpServletResponse
      * @throws IOException
      */
-    private void authorize(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse) throws IOException {
+    private void authorize(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, String format) throws IOException {
 
         ObjectMapper mapper = new ObjectMapper();
 
@@ -663,7 +671,7 @@ public class PaaaEndpoint extends HttpServlet {
         requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_UNAUTHORIZED) + ".uri"));
 
         // XML-Ausgabe mit JAXB
-        if (this.format.equals("xml")) {
+        if (format.equals("xml")) {
 
             try {
 
@@ -682,7 +690,7 @@ public class PaaaEndpoint extends HttpServlet {
         }
 
         // JSON-Ausgabe mit Jackson
-        if (this.format.equals("json")) {
+        if (format.equals("json")) {
 
             httpServletResponse.setContentType("application/json;charset=UTF-8");
             mapper.writeValue(httpServletResponse.getWriter(), requestError);
@@ -692,7 +700,7 @@ public class PaaaEndpoint extends HttpServlet {
     /**
      * PAAA services
      */
-    private void provideService(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, String patronid, String token, String service) throws IOException {
+    private void provideService(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, String format, String patronid, String token, String service) throws IOException {
 
         String baseurl = httpServletRequest.getServerName() + ":" + httpServletRequest.getServerPort();
         this.logger.info("[" + config.getProperty("service.name") + "] " + "baseurl = " + baseurl);
@@ -722,13 +730,25 @@ public class PaaaEndpoint extends HttpServlet {
                         } catch (Exception e) { /*report an error*/ }
 
                         Patron patron2create = mapper.readValue(jb.toString(), Patron.class);
-                        patron2create.setAccount(patronid);
+                        if (patron2create.getAccount() == null || patron2create.getAccount().equals("")) {
+                            if (!patronid.equals("")) {
+                                patron2create.setAccount(patronid);
+                            } else {
+                                patron2create.setAccount(UUID.randomUUID().toString());
+                            }
+                        }
 
                         patron = integratedLibrarySystem.signup(patron2create);
 
                         this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> success!");
 
                         if (patron != null) {
+
+                            Block block = new Block();
+                            LocalDateTime timePoint = LocalDateTime.now();
+                            block.setDate(timePoint.getYear() + "-" + (timePoint.getMonthValue() < 10 ? "0" + timePoint.getMonthValue() : timePoint.getMonthValue()) + "-" + (timePoint.getDayOfMonth() < 10 ? "0" + timePoint.getDayOfMonth() : timePoint.getDayOfMonth()));
+                            block.setKey("93");
+                            integratedLibrarySystem.blockpatron(patron,block);
 
                             StringWriter json = new StringWriter();
                             mapper.writeValue(json, patron);
@@ -1302,7 +1322,7 @@ public class PaaaEndpoint extends HttpServlet {
 
         }
 
-    private void sendRequestError(HttpServletResponse httpServletResponse, RequestError requestError) {
+    private void sendRequestError(HttpServletResponse httpServletResponse, RequestError requestError, String format) {
 
         ObjectMapper mapper = new ObjectMapper();
 
@@ -1313,7 +1333,7 @@ public class PaaaEndpoint extends HttpServlet {
         try {
 
             // XML-Ausgabe mit JAXB
-            if (this.format.equals("xml")) {
+            if (format.equals("xml")) {
 
                 try {
 
@@ -1331,7 +1351,7 @@ public class PaaaEndpoint extends HttpServlet {
             }
 
             // JSON-Ausgabe mit Jackson
-            if (this.format.equals("json")) {
+            if (format.equals("json")) {
 
                 httpServletResponse.setContentType("application/json;charset=UTF-8");
                 mapper.writeValue(httpServletResponse.getWriter(), requestError);

@@ -41,6 +41,7 @@ import javax.xml.bind.annotation.XmlRootElement;
 public class Patron {
 
     private String account;
+    private String username;
     private String userpassword;
 
     private String name;
@@ -89,6 +90,15 @@ public class Patron {
 
     public void setAccount(String account) {
         this.account = account;
+    }
+
+    @XmlElement
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     @XmlElement
