@@ -28,6 +28,7 @@ import de.tu_dortmund.ub.api.paaa.model.Block;
 import de.tu_dortmund.ub.api.paaa.model.Fee;
 import de.tu_dortmund.ub.api.paaa.model.Patron;
 
+import java.util.HashMap;
 import java.util.Properties;
 
 /**
@@ -41,6 +42,8 @@ public interface IntegratedLibrarySystem {
      * @param properties
      */
     void init(Properties properties);
+
+    HashMap<String,String> health(Properties properties);
 
     Patron signup(Patron patron) throws ILSException;
 

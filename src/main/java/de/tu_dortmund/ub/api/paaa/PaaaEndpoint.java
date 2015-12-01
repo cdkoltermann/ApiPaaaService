@@ -31,9 +31,11 @@ import de.tu_dortmund.ub.api.paaa.ils.ILSException;
 import de.tu_dortmund.ub.api.paaa.ils.IntegratedLibrarySystem;
 import de.tu_dortmund.ub.api.paaa.model.*;
 import de.tu_dortmund.ub.util.impl.Lookup;
+import de.tu_dortmund.ub.util.impl.Mailer;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
+import javax.mail.MessagingException;
 import javax.servlet.ServletException;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServlet;
@@ -1256,8 +1258,24 @@ public class PaaaEndpoint extends HttpServlet {
             catch (ILSException e) {
 
                 this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
-                this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": ILS! " + e.getMessage());
+                this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_INTERNAL_SERVER_ERROR + ": ILS Error! " + e.getMessage());
 
+                // Mail to Bib-IT wg. Socket-Error
+                try {
+
+                    StringWriter sw = new StringWriter();
+                    PrintWriter pw = new PrintWriter(sw);
+                    e.printStackTrace(pw);
+
+                    Mailer mailer = new Mailer(this.config.getProperty("service.mailer.conf"));
+                    mailer.postMail("[" + this.config.getProperty("service.name") + "] ILS Error! " + e.getMessage(), sw.toString());
+
+                } catch (MessagingException | IOException e1) {
+
+                    this.logger.error(e1.getMessage(), e1.getCause());
+                }
+
+                // TODO >> properties
                 httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
                 httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
                 httpServletResponse.setContentType("application/json");
@@ -1269,15 +1287,15 @@ public class PaaaEndpoint extends HttpServlet {
                 }
                 // Error handling mit suppress_response_codes=false (=default)
                 else {
-                    httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                    httpServletResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 }
 
                 // Json für Response body
                 RequestError requestError = new RequestError();
-                requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-                requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-                requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-                requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+                requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR)));
+                requestError.setCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".description"));
+                requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".uri"));
 
                 StringWriter json = new StringWriter();
                 mapper.writeValue(json, requestError);
@@ -1289,7 +1307,7 @@ public class PaaaEndpoint extends HttpServlet {
         }
         else {
 
-            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_SERVICE_UNAVAILABLE + ": Config Error!");
+            this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_INTERNAL_SERVER_ERROR + ": Config Error!");
 
             httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
             httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
@@ -1302,15 +1320,15 @@ public class PaaaEndpoint extends HttpServlet {
             }
             // Error handling mit suppress_response_codes=false (=default)
             else {
-                httpServletResponse.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                httpServletResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             }
 
             // Json für Response body
             RequestError requestError = new RequestError();
-            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE)));
-            requestError.setCode(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".description"));
-            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_SERVICE_UNAVAILABLE) + ".uri"));
+            requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR)));
+            requestError.setCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".description"));
+            requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".uri"));
 
             StringWriter json = new StringWriter();
             mapper.writeValue(json, requestError);
@@ -1320,7 +1338,7 @@ public class PaaaEndpoint extends HttpServlet {
             httpServletResponse.getWriter().println(json);
         }
 
-        }
+    }
 
     private void sendRequestError(HttpServletResponse httpServletResponse, RequestError requestError, String format) {
 

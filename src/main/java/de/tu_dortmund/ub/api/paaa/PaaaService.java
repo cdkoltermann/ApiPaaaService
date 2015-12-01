@@ -75,7 +75,7 @@ public class PaaaService {
         PropertyConfigurator.configure(config.getProperty("service.log4j-conf"));
         Logger logger = Logger.getLogger(PaaaService.class.getName());
 
-        logger.info("[" + config.getProperty("service.name") + "] " + "Starting 'PaaaService' ...");
+        logger.info("[" + config.getProperty("service.name") + "] " + "Starting '" + config.getProperty("service.name") + "' ...");
         logger.info("[" + config.getProperty("service.name") + "] " + "conf-file = " + conffile);
         logger.info("[" + config.getProperty("service.name") + "] " + "log4j-conf-file = " + config.getProperty("service.log4j-conf"));
 
@@ -91,6 +91,10 @@ public class PaaaService {
         context.setContextPath(config.getProperty("service.contextPath"));
 
         server.setHandler(context);
+
+        context.addServlet(new ServletHolder(new PingEndpoint(conffile)), config.getProperty("service.endpoint.ping"));
+
+        context.addServlet(new ServletHolder(new HealthEndpoint(conffile)), config.getProperty("service.endpoint.health"));
 
         context.addServlet(new ServletHolder(new PaaaEndpoint(conffile)), config.getProperty("service.endpoint") + "/*");
 
