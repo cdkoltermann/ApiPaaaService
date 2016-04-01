@@ -1260,49 +1260,84 @@ public class PaaaEndpoint extends HttpServlet {
                 this.logger.info("[" + config.getProperty("service.name") + "] " + token + " performed '" + service + "' event for patron '" + patronid + "' >>> failed!");
                 this.logger.error("[" + config.getProperty("service.name") + "] " + HttpServletResponse.SC_INTERNAL_SERVER_ERROR + ": ILS Error! " + e.getMessage());
 
-                // Mail to Bib-IT wg. Socket-Error
-                try {
+                // TODO e.getMessage = 403
+                if (e.getMessage().equals("403")) {
 
-                    StringWriter sw = new StringWriter();
-                    PrintWriter pw = new PrintWriter(sw);
-                    e.printStackTrace(pw);
+                    // TODO >> properties
+                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
+                    httpServletResponse.setContentType("application/json");
+                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
 
-                    Mailer mailer = new Mailer(this.config.getProperty("service.mailer.conf"));
-                    mailer.postMail("[" + this.config.getProperty("service.name") + "] ILS Error! " + e.getMessage(), sw.toString());
+                    // Error handling mit suppress_response_codes=true
+                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                    }
+                    // Error handling mit suppress_response_codes=false (=default)
+                    else {
+                        httpServletResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    }
 
-                } catch (MessagingException | IOException e1) {
+                    // Json für Response body
+                    RequestError requestError = new RequestError();
+                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_FORBIDDEN)));
+                    requestError.setCode(HttpServletResponse.SC_FORBIDDEN);
+                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_FORBIDDEN) + ".description"));
+                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_FORBIDDEN) + ".uri"));
 
-                    this.logger.error(e1.getMessage(), e1.getCause());
+                    StringWriter json = new StringWriter();
+                    mapper.writeValue(json, requestError);
+                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                    // send response
+                    httpServletResponse.getWriter().println(json);
                 }
-
-                // TODO >> properties
-                httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
-                httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
-                httpServletResponse.setContentType("application/json");
-                httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
-
-                // Error handling mit suppress_response_codes=true
-                if (httpServletRequest.getParameter("suppress_response_codes") != null) {
-                    httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                }
-                // Error handling mit suppress_response_codes=false (=default)
                 else {
-                    httpServletResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+
+                    // Mail to Bib-IT wg. Socket-Error
+                    try {
+
+                        StringWriter sw = new StringWriter();
+                        PrintWriter pw = new PrintWriter(sw);
+                        e.printStackTrace(pw);
+
+                        Mailer mailer = new Mailer(this.config.getProperty("service.mailer.conf"));
+                        mailer.postMail("[" + this.config.getProperty("service.name") + "] ILS Error! " + e.getMessage(), sw.toString());
+
+                    } catch (MessagingException | IOException e1) {
+
+                        this.logger.error(e1.getMessage(), e1.getCause());
+                    }
+
+                    // TODO >> properties
+                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer");
+                    httpServletResponse.setHeader("WWW-Authentificate", "Bearer realm=\"PAAA\"");
+                    httpServletResponse.setContentType("application/json");
+                    httpServletResponse.setHeader("Access-Control-Allow-Origin", "*");
+
+                    // Error handling mit suppress_response_codes=true
+                    if (httpServletRequest.getParameter("suppress_response_codes") != null) {
+                        httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                    }
+                    // Error handling mit suppress_response_codes=false (=default)
+                    else {
+                        httpServletResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                    }
+
+                    // Json für Response body
+                    RequestError requestError = new RequestError();
+                    requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR)));
+                    requestError.setCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                    requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".description"));
+                    requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".uri"));
+
+                    StringWriter json = new StringWriter();
+                    mapper.writeValue(json, requestError);
+                    this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
+
+                    // send response
+                    httpServletResponse.getWriter().println(json);
                 }
-
-                // Json für Response body
-                RequestError requestError = new RequestError();
-                requestError.setError(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR)));
-                requestError.setCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                requestError.setDescription(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".description"));
-                requestError.setErrorUri(this.config.getProperty("error." + Integer.toString(HttpServletResponse.SC_INTERNAL_SERVER_ERROR) + ".uri"));
-
-                StringWriter json = new StringWriter();
-                mapper.writeValue(json, requestError);
-                this.logger.debug("[" + config.getProperty("service.name") + "] " + json);
-
-                // send response
-                httpServletResponse.getWriter().println(json);
             }
         }
         else {
